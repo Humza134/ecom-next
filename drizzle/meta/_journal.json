@@ -15,6 +15,13 @@
       "when": 1767310730436,
       "tag": "0001_funny_meggan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1767913751343,
+      "tag": "0002_loud_mindworm",
+      "breakpoints": true
     }
   ]
 }
