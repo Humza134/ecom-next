@@ -164,10 +164,37 @@ export const payments = pgTable("payments", {
   index("payments_stripe_idx").on(t.stripePaymentIntentId) // for fast webhook lookups
 ]);
 
+// ⭐ Reviews Table
+export const reviews = pgTable("reviews", {
+  id: serial("id").primaryKey(),
+  
+  // Kis user ne review diya
+  userId: varchar("user_id", { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  
+  // Kis product ka review hai
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: 'cascade' }),
+  
+  // Rating usually 1 se 5 hoti hai
+  rating: integer("rating").notNull(), 
+  
+  // User ka comment
+  comment: text("comment"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  // Fast searching ke liye index
+  index("reviews_product_idx").on(t.productId),
+  index("reviews_user_idx").on(t.userId),
+  // 💡 Constraint: user can only review a product once. (optional but recommended)
+  // unique("user_product_review_unique").on(t.userId, t.productId) 
+]);
+
 // --- RELATIONS (Crucial for easy querying) ---
 
 export const usersRelations = relations(users, ({ many }) => ({
   products: many(products),
+  reviews: many(reviews),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -190,6 +217,7 @@ export const productsRelations = relations(products, ({ one, many }) => ({
     references: [users.id],
   }),
   images: many(productImages),
+  reviews: many(reviews),
 }));
 
 export const productImagesRelations = relations(productImages, ({ one }) => ({
@@ -248,6 +276,16 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
   }),
 }));
 
+export const reviewsRelations = relations(reviews, ({ one }) => ({
+  user: one(users, {
+    fields: [reviews.userId],
+    references: [users.id],
+  }),
+  product: one(products, {
+    fields: [reviews.productId],
+    references: [products.id],
+  }),
+}));
 
 export type User = typeof users.$inferSelect;
 export type Product = typeof products.$inferSelect;
@@ -258,3 +296,4 @@ export type CartItem = typeof cartItems.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
+export type Review = typeof reviews.$inferSelect;
