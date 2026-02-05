@@ -70,14 +70,17 @@ export async function getProducts (params: QuerySchema):Promise<ApiResponse<Prod
             offset,
             orderBy,
             with: {
-            category: { columns: { name: true, slug: true } },
-            images: {
-                columns: { url: true, altText: true, isPrimary: true, id: true },
-                // where: eq(productImages.isPrimary, true),
-                orderBy: desc(productImages.isPrimary),
-                limit: 1,
-                // Optimize: put primary image first
-            },
+              category: { columns: { name: true, slug: true } },
+              images: {
+                  columns: { url: true, altText: true, isPrimary: true, id: true },
+                  // where: eq(productImages.isPrimary, true),
+                  orderBy: desc(productImages.isPrimary),
+                  limit: 1,
+                  // Optimize: put primary image first
+              },
+              reviews: {
+                columns: {rating: true}
+              }
             },
             columns: {
             id: true,
@@ -98,6 +101,28 @@ export async function getProducts (params: QuerySchema):Promise<ApiResponse<Prod
         const total = Number(totalCountResult[0]?.count || 0);
         const totalPages = Math.ceil(total / limit);
 
+        // 4. Transform Data (Calculate Average Rating)
+        const formattedData: ProductDTO[] = data.map((prod) => {
+          // Calculate Average Rating logic
+          const totalReviews = prod.reviews.length;
+          const sumRating = prod.reviews.reduce((acc, curr) => acc + curr.rating, 0);
+
+          const avgRating = totalReviews > 0 ? Number((sumRating / totalReviews).toFixed(1)) : 0;
+          return {
+            id: prod.id,
+            title: prod.title,
+            slug: prod.slug,
+            price: prod.price,
+            stock: prod.stock,
+            createdAt: prod.createdAt,
+            category: prod.category,
+            images: prod.images,
+            
+            // 🆕 New Fields
+            rating: avgRating,
+            reviewCount: totalReviews
+          }
+        })
         // const formattedData = data.map(product => ({
         //     ...product,
         //     createdAt: product.createdAt.toISOString(),
@@ -106,7 +131,7 @@ export async function getProducts (params: QuerySchema):Promise<ApiResponse<Prod
         return {
         success: true,
         message: "Products fetched successfully",
-        data,
+        data: formattedData,
         meta: { total, totalPages, page, limit, hasNextPage: page < totalPages, hasPrevPage: page > 1 },
     };
     } catch (error) {
