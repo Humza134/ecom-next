@@ -16,6 +16,9 @@ export interface ProductCategoryDTO {
 export interface ProductDTO extends Omit<Product, 'categoryId' | 'createdBy' | 'isActive' | 'updatedAt' | 'description'> {
     category: ProductCategoryDTO;
     images: ProductImageDTO[];
+    // 🆕 Aggregated Review Data
+    rating: number;      // e.g., 4.5
+    reviewCount: number; // e.g., 25
 }
 
 export interface ProductCreateDTO {
