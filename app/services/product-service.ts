@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { sql, eq, and, desc, asc, notInArray, SQL,inArray  } from "drizzle-orm";
 import slugify from "slugify";
 import { nanoid } from "nanoid";
-import { products, productImages, categories } from "@/lib/db/schema/schemas";
+import { products, productImages, categories, reviews } from "@/lib/db/schema/schemas";
 import { ApiResponse } from "@/types/api";
 import { ProductCreateDTO, ProductDTO, getSingleProductDTO } from "@/types/products";
 import { querySchema, productSchema, paramsProductIdSchema, ProductUpdateInput, QuerySchema, ProductFormValues } from "../validations/productsZodSchema";
@@ -147,35 +147,97 @@ export async function getProducts (params: QuerySchema):Promise<ApiResponse<Prod
 
 export async function getProductById(id: number): Promise<ApiResponse<getSingleProductDTO>> {
   try {
-    const product = await db.query.products.findFirst({
-      where: eq(products.id, id),
-      with: {
-        category: { columns: { name: true, slug: true } },
-        images: {
-          columns: { url: true, altText: true, isPrimary: true, id: true },
-          // Optimize: put primary image first
-          orderBy: desc(productImages.isPrimary),
+    // 🔥 Performance: Dono queries parallel chalayenge
+    const [productData, reviewStats] = await Promise.all([
+      // 1. Fetch Product + Relations + Top 5 Reviews
+      db.query.products.findFirst({
+        where: eq(products.id, id),
+        with: {
+          category: { columns: { name: true, slug: true } },
+          images: {
+            columns: { url: true, altText: true, isPrimary: true, id: true },
+            orderBy: desc(productImages.isPrimary),
+          },
+          // Sirf latest 5 reviews utha rahe hain display ke liye
+          reviews: {
+            orderBy: desc(reviews.createdAt),
+            limit: 5, 
+            columns: {
+                id: true,
+                rating: true,
+                comment: true,
+                createdAt: true,
+            },
+            with: {
+                user: {
+                    columns: { id: true, fullName: true }
+                }
+            }
+          }
         },
-      },
-      columns: {
-        id: true,
-        title: true,
-        slug: true,
-        description: true,
-        isActive: true,
-        price: true,
-        stock: true,
-      },
-    });
+        columns: {
+          id: true,
+          title: true,
+          slug: true,
+          description: true,
+          isActive: true,
+          price: true,
+          stock: true,
+        },
+      }),
 
-    if (!product) {
-      return { success: false, message: "Product not found", data: null };
+      // 2. Calculate Average Rating & Total Count directly from DB
+      // Ye query fast hoti hai kyunki ye sirf numbers return karti hai
+      db
+        .select({
+            count: sql<number>`count(*)`,
+            avgRating: sql<string>`avg(${reviews.rating})` // String return karega pg-driver
+        })
+        .from(reviews)
+        .where(eq(reviews.productId, id))
+    ]);
+
+    if (!productData) {
+      return { success: false, message: "Product not found", data: null, error: { code: "NOT_FOUND" } };
     }
 
-    return { success: true, message: "Product fetched successfully", data: product };
+    // 3. Data Parsing
+    const stats = reviewStats[0];
+    const totalReviews = Number(stats?.count || 0);
+    const avgRating = stats?.avgRating ? parseFloat(Number(stats.avgRating).toFixed(1)) : 0;
+
+    // 4. Transform Response
+    const finalData: getSingleProductDTO = {
+        ...productData, // id, title, price, etc.
+        category: productData.category,
+        images: productData.images,
+        
+        // Stats
+        rating: avgRating,
+        reviewCount: totalReviews,
+        
+        // Rename 'reviews' to 'recentReviews' to be clear it's not ALL reviews
+        recentReviews: productData.reviews.map(r => ({
+            id: r.id,
+            rating: r.rating,
+            comment: r.comment,
+            createdAt: r.createdAt,
+            user: {
+                id: r.user.id,
+                fullName: r.user.fullName
+            }
+        }))
+    };
+
+    return { 
+        success: true, 
+        message: "Product fetched successfully", 
+        data: finalData 
+    };
+
   } catch (error) {
-    console.error("getProductById:", error);
-    return { success: false, message: "Internal Server Error", data: null };
+    console.error("getProductById Service Error:", error);
+    return { success: false, message: "Internal Server Error", data: null, error: { code: "INTERNAL_ERROR" } };
   }
 }
 
